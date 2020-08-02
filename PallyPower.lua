@@ -26,6 +26,7 @@ PP_Symbols = 0
 PP_IsPally = false
 PP_Leader = false
 PP_LeaderSalv = false
+PP_FailedCastCtr = 0
 
 local initalized = false
 local party_units = {}
@@ -59,6 +60,19 @@ function PallyPower:Debug(string)
     end
     if (PP_DebugEnabled) then
         DEFAULT_CHAT_FRAME:AddMessage("[PP] " .. string, 1, 0, 0)
+    end
+end
+
+function string.starts(String,Start)
+   return string.sub(String,1,string.len(Start))==Start
+end
+
+function PallyPower:onFailedEvent(event, ...)
+    local spellSrc, castGUID, spellID = ...
+
+    if (spellSrc == "player") and string.starts(GetSpellInfo(spellID), "Greater Blessing") then
+               self:Debug("Player failed to cast " .. spellID)
+               PP_FailedCastCtr = PP_FailedCastCtr + 1
     end
 end
 
@@ -3012,7 +3026,9 @@ function PallyPower:GetUnitAndSpellSmart(classid, mousebutton)
     -- Greater Blessings
     if (mousebutton == "LeftButton") then
         local minExpire, classMinExpire, classNeedsBuff, classMinUnitPenalty, classMinUnit, classMinSpell, classMaxSpell = 600, 600, true, 600, nil, nil, nil
-        for i, unit in pairs(class) do
+         for i=0,(table.getn(class)-1) do
+	    adjustedIdx = (i + PP_FailedCastCtr) % table.getn(class)
+	    unit = class[adjustedIdx+1] -- Add 1 for lua 1 based arrays
             local isPet = unit.unitid:find("pet")
             local spellID, gspellID = self:GetSpellID(classid, unit.name)
             local spell = self.Spells[spellID]
