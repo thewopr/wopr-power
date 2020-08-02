@@ -1,3 +1,12 @@
+****
+Fork of the official PallyPower for personal/guild use.
+
+Aims to fix/improve some issues that have arisen for Prot Pallies as well as provide QOL improvements for others.
+
+****
+
+
+
 Discord Link: https://discord.gg/M4G92wG
  
 

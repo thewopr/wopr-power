@@ -26,7 +26,7 @@ PP_Symbols = 0
 PP_IsPally = false
 PP_Leader = false
 PP_LeaderSalv = false
-PP_FailedCastCtr = 0
+PP_FailedCastCtr = math.random(1,MAX_RAID_MEMBERS)
 
 local initalized = false
 local party_units = {}
@@ -60,19 +60,6 @@ function PallyPower:Debug(string)
     end
     if (PP_DebugEnabled) then
         DEFAULT_CHAT_FRAME:AddMessage("[PP] " .. string, 1, 0, 0)
-    end
-end
-
-function string.starts(String,Start)
-   return string.sub(String,1,string.len(Start))==Start
-end
-
-function PallyPower:onFailedEvent(event, ...)
-    local spellSrc, castGUID, spellID = ...
-
-    if (spellSrc == "player") and string.starts(GetSpellInfo(spellID), "Greater Blessing") then
-               self:Debug("Player failed to cast " .. spellID)
-               PP_FailedCastCtr = PP_FailedCastCtr + 1
     end
 end
 
@@ -164,6 +151,7 @@ function PallyPower:OnEnable()
     self:RegisterEvent("PLAYER_ROLES_ASSIGNED")
     self:RegisterEvent("UPDATE_BINDINGS", "BindKeys")
     self:RegisterEvent("CHANNEL_UI_UPDATE", "ReportChannels")
+    self:RegisterEvent("UNIT_SPELLCAST_FAILED")
     self:RegisterBucketEvent("SPELLS_CHANGED", 1, "SPELLS_CHANGED")
     self:RegisterBucketEvent("PLAYER_ENTERING_WORLD", 2, "PLAYER_ENTERING_WORLD")
     if PP_IsPally then
@@ -1468,6 +1456,15 @@ function PallyPower:SendMessage(msg, type, target)
                 --self:Debug("[Sent Message] prefix: " .. self.commPrefix .. " | msg: " .. msg .. " | type: " .. type)
             end
         end
+    end
+end
+
+function PallyPower:UNIT_SPELLCAST_FAILED(event, ...)
+    local spellSrc, castGUID, spellID = ...
+
+    if (spellSrc == self.player) and PallyPower.GSpellsSet[spellID] then
+               PP_FailedCastCtr = PP_FailedCastCtr + 1
+               self:Debug("Player failed to cast " .. spellID .. " PP_FailedCastCtr " .. PP_FailedCastCtr)
     end
 end
 
@@ -3022,175 +3019,24 @@ end
 
 function PallyPower:GetUnitAndSpellSmart(classid, mousebutton)
     local class = classes[classid]
-    local now = time()
-    -- Greater Blessings
-    if (mousebutton == "LeftButton") then
-        local minExpire, classMinExpire, classNeedsBuff, classMinUnitPenalty, classMinUnit, classMinSpell, classMaxSpell = 600, 600, true, 600, nil, nil, nil
-         for i=0,(table.getn(class)-1) do
-	    adjustedIdx = (i + PP_FailedCastCtr) % table.getn(class)
-	    unit = class[adjustedIdx+1] -- Add 1 for lua 1 based arrays
-            local isPet = unit.unitid:find("pet")
-            local spellID, gspellID = self:GetSpellID(classid, unit.name)
-            local spell = self.Spells[spellID]
-            local gspell = self.GSpells[gspellID]
-            if (IsSpellInRange(gspell, unit.unitid) == 1) and (not UnitIsDeadOrGhost(unit.unitid)) then
-                local penalty = 0
-                local buffExpire, buffDuration, buffName = self:IsBuffActive(spell, gspell, unit.unitid)
-                local nSpell, gSpell = self:CanBuffBlessing(spellID, gspellID, unit.unitid)
-                local recipients = #classes[classid]
+    -- Iterate over all members of the class, starting from an index that is agitated by failure to cast a greater blessing
+    for i=0, (#class)-1 do
+        local adjustedIdx = (i + PP_FailedCastCtr) % (#class)
+        local unit = class[adjustedIdx+1] -- Add 1 for lua 1 based arrays
 
-                if (self.AutoBuffedList[unit.name] and now - self.AutoBuffedList[unit.name] < recipients*1.65) then
-                    penalty = PALLYPOWER_GREATERBLESSINGDURATION
-                end
-                if (self.PreviousAutoBuffedUnit and (unit.hasbuff and unit.hasbuff > minExpire) and unit.name == self.PreviousAutoBuffedUnit.name and GetNumGroupMembers() > 0) then
-                    penalty = PALLYPOWER_GREATERBLESSINGDURATION
-                else
-                    penalty = 0
-                end
-                -- Buff Duration option disabled - allow spamming buffs
-                if not self.opt.display.buffDuration then
-                    for i = 1, recipients do
-                        local unitID = classes[classid][i]
-                        if IsSpellInRange(gspell, unitID.unitid) ~= 1 or UnitIsDeadOrGhost(unitID.unitid) or UnitIsAFK(unitID.unitid) or not UnitIsConnected(unitID.unitid) then
-                            recipients = recipients - 1
-                        end
-                    end
-                    if not self.AutoBuffedList[unit.name] or now - self.AutoBuffedList[unit.name] > (1.65 * recipients) then
-                        buffExpire = 0
-                        penalty = 0
-                    end
-                else
-                    -- If normal blessing - set duration to zero and buff it - but only if an alternate blessing isn't assigned
-                    if (buffName and buffName == spell and spellID == gspellID) then
-                        buffExpire = 0
-                        penalty = 0
-                    end
-                end
-                if IsInRaid() then
-                    for k, v in pairs(classmaintanks) do
-                        if (gspellID == 4 and not self.opt.SalvInCombat) then
-                            -- Skip tanks if Salv is assigned. This allows autobuff to work since some tanks
-                            -- have addons and/or scripts to auto cancel Salvation. Prevents getting stuck
-                            -- buffing a tank when auto buff rotates among players in the class group.
-                            if k == unit.unitid and v == true then
-                                buffExpire = 9999
-                                penalty = 9999
-                            end
-                        end
-                    end
-                end
-                -- We don't buff pets with Greater Blessings
-                if isPet then
-                    buffExpire = 9999
-                    penalty = 9999
-                end
-                -- Refresh any greater blessing under a 10 min duration
-                if ((not buffExpire or (buffExpire < classMinExpire) and buffExpire < PALLYPOWER_GREATERBLESSINGDURATION) and classMinExpire > 0) then
-                    if (penalty < classMinUnitPenalty) then
-                        classMinUnit = unit
-                        classMinUnitPenalty = penalty
-                    end
-                    classMinSpell = nSpell
-                    classMaxSpell = gSpell
-                    classMinExpire = (buffExpire or 0)
-                end
-            elseif (UnitIsVisible(unit.unitid) == false and not UnitIsAFK(unit.unitid) and UnitIsConnected(unit.unitid)) and (IsInRaid() == false or #classes[classid] > 3) then
-                classNeedsBuff = false
-            end
-        end
-        -- Refresh any greater blessing under a 10 min duration
-        if (classMinUnit and classMinUnit.name and (classNeedsBuff or not self.opt.autobuff.waitforpeople) and classMinExpire + classMinUnitPenalty < minExpire and minExpire > 0) then
-            self.AutoBuffedList[classMinUnit.name] = now
-            self.PreviousAutoBuffedUnit = classMinUnit
-            return classMinUnit.unitid, classMinSpell, classMaxSpell
-        end
-    -- Normal Blessings
-    elseif (mousebutton == "RightButton") then
-        local minExpire, minUnit, minSpell = 240, nil, nil
-        for i, unit in pairs(class) do
-            local spellID, gspellID = self:GetSpellID(classid, unit.name)
-            local spell = self.Spells[spellID]
-            local spell2 = self.GSpells[spellID]
-            local gspell = self.GSpells[gspellID]
-            if (IsSpellInRange(spell, unit.unitid) == 1) and (not UnitIsDeadOrGhost(unit.unitid)) then
-                local penalty = 0
-                local greaterBlessing = false
-                local buffExpire, buffDuration, buffName = self:IsBuffActive(spell, spell2, unit.unitid)
-                local nSpell, gSpell = self:CanBuffBlessing(spellID, gspellID, unit.unitid)
-                local recipients = #classes[classid]
-
-                if (self.AutoBuffedList[unit.name] and now - self.AutoBuffedList[unit.name] < recipients*1.65) then
-                    penalty = PALLYPOWER_NORMALBLESSINGDURATION
-                end
-                if (self.PreviousAutoBuffedUnit and (unit.hasbuff and unit.hasbuff > minExpire) and unit.name == self.PreviousAutoBuffedUnit.name and GetNumGroupMembers() > 0) then
-                    penalty = PALLYPOWER_NORMALBLESSINGDURATION
-                else
-                    penalty = 0
-                end
-                -- Flag valid Greater Blessings | If it falls below 4 min refresh it with a Normal Blessing
-                if buffName and buffName == gspell and buffExpire > minExpire then
-                    greaterBlessing = true
-                    penalty = PALLYPOWER_NORMALBLESSINGDURATION
-                elseif buffName and buffName == gspell and buffExpire < minExpire then
-                    greaterBlessing = false
-                    penalty = 0
-                end
-                if (buffName and buffName == gspell) then
-                    -- If we're using Blessing of Sacrifice then set the expiration to match Normal Blessings so Auto Buff works.
-                    if (spell == self.Spells[7]) then
-                        greaterBlessing = false
-                        buffExpire = 270
-                        penalty = 0
-                    -- Alternate Blessing assigned then always allow buffing over a Greater Blessing: Set duration to zero and buff it.
-                    elseif (spell ~= self.Spells[7] and spellID ~= gspellID) then
-                        greaterBlessing = false
-                        buffExpire = 0
-                        penalty = 0
-                    end
-                end
-                -- Buff Duration option disabled - allow spamming buffs
-                -- This logic counts the number of players in a class and subtracts the ratio from the
-                -- buffs overall duration resulting in a "round robin" approach for spamming buffs so
-                -- auto buff doesn't get stuck on one person. The ratio is reduced when a player has
-                -- a Greater Blessing, is out of range, dead, afk, or not connected.
-                if not self.opt.display.buffDuration then
-                    for i = 1, recipients do
-                        local unitID = classes[classid][i]
-                        if (unitID.hasbuff and unitID.hasbuff > 300) or IsSpellInRange(gSpell, unitID.unitid) ~= 1 or UnitIsDeadOrGhost(unitID.unitid) or UnitIsAFK(unitID.unitid) or not UnitIsConnected(unitID.unitid) then
-                            recipients = recipients - 1
-                        end
-                    end
-                    if not buffExpire or buffExpire < (300 - ((1.65 * recipients) - 1.65)) then
-                        buffExpire = 0
-                        penalty = 0
-                    end
-                end
-                if IsInRaid() then
-                    -- Skip tanks if Salv is assigned. This allows autobuff to work since some tanks
-                    -- have addons and/or scripts to auto cancel Salvation. Tanks shouldn't have a
-                    -- Normal Blessing of Salvation but sometimes there are way more Paladins in a
-                    -- Raid than there are buffs to assign so an Alternate Blessing might not be in
-                    -- use to wipe Salvation from a tank. Prevents getting stuck buffing a tank when
-                    -- auto buff rotates among players in the class group.
-                    for k, v in pairs(classmaintanks) do
-                        if k == unit.unitid and v == true then
-                            if (spellID == 4 and not self.opt.SalvInCombat) then
-                                buffExpire = 9999
-                                penalty = 9999
-                            end
-                        end
-                    end
-                end
-                -- Refresh any normal blessing under a 4 min duration
-                if ((not buffExpire or buffExpire + penalty < minExpire and buffExpire < PALLYPOWER_NORMALBLESSINGDURATION) and minExpire > 0 and not greaterBlessing) then
-                    self.AutoBuffedList[unit.name] = now
-                    self.PreviousAutoBuffedUnit = unit
-                    return unit.unitid, nSpell, gSpell
-                end
+        local spellID, gspellID = self:GetSpellID(classid, unit.name)
+        local spell = self.Spells[spellID]
+        local gspell = self.GSpells[gspellID]
+        if (IsSpellInRange(gspell, unit.unitid) == 1) and (not UnitIsDeadOrGhost(unit.unitid)) then                
+            local nSpell, gSpell = self:CanBuffBlessing(spellID, gspellID, unit.unitid)
+            if mousebutton == "LeftButton" then
+                return unit.unitid, gSpell
+            elseif mousebutton == "RightButton" then
+                return unit.unitid, nSpell
             end
         end
     end
-    return nil, "", ""
+    return nil, ""
 end
 
 function PallyPower:IsBuffActive(spellName, gspellName, unitID)
@@ -3226,72 +3072,30 @@ function PallyPower:ButtonPreClick(button, mousebutton)
     button:UnwrapScript(button, "OnClick")
     -- Normal Blessing: Clear
     button:SetAttribute("macrotext2", nil)
+    
     local classid = button:GetAttribute("classID")
-    local spell, gspell, unitName, unitid
-    if classid then
-        if IsInRaid() and (mousebutton == "LeftButton") and (classid ~= 9) then
-            unitid, spell, gspell = self:GetUnitAndSpellSmart(classid, mousebutton)
-            if unitid and classid then
-                unitName = GetUnitName(unitid, true)
-            end
-            spell = false
-        elseif not IsInRaid() or ((IsInRaid() and mousebutton == "RightButton")) then
-            unitid, spell, gspell = self:GetUnitAndSpellSmart(classid, mousebutton)
-            if unitid then
-                if classid == 9 then
-                    local unitPrefix = "party"
-                    local offSet = 9
-                    if (unitid:find("raid")) then
-                        unitPrefix = "raid"
-                        offSet = 8
-                    end
-                    unitName = GetUnitName(unitPrefix .. unitid:sub(offSet), true) .. "-pet"
-                else
-                    unitName = GetUnitName(unitid, true)
-                end
-            end
-            if mousebutton == "LeftButton" then
-                spell = false
-            end
-            if mousebutton == "RightButton" then
-                gspell = false
-            end
-        end
-        if unitName then
-            local spellID, gspellID = self:GetSpellID(classid, unitName)
-            -- Enable Greater Blessing of Salvation on everyone but do not allow Normal Blessing of Salvation on tanks if SalvInCombat is disabled
-            if IsInRaid() and (spellID == 4 or gspellID == 4) and (not self.opt.SalvInCombat) then
-                for k, v in pairs(classmaintanks) do
-                    -- If the buff recipient unit(s) is in combat and there is a tank present in
-                    -- the Class Group then disable Greater Blessing of Salvation for this unit(s).
-                    if UnitAffectingCombat(unitid) and (gspellID == 4) and (k == classid and v == true) then
-                        gspell = false
-                    end
-                    if k == unitid and v == true then
-                        -- Do not allow Salvation on tanks - Blessings [disabled]
-                        if (spellID == 4) then
-                            spell = false
-                        end
-                        if (gspellID == 4) then
-                            gspell = false
-                        end
-                    end
-                end
-            end
-            -- Set Greater Blessing: left click
-            if gspell then
-                local gspellMacro = "/cast [@" .. unitName .. ",help,nodead] " .. gspell
-                button:SetAttribute("macrotext1", gspellMacro)
-                self:Debug("Single Unit Macro Executed: "..gspellMacro)
-            end
-            -- Set Normal Blessing: right click (Only works while not in combat. Cleared in PostClick.)
-            if spell then
-                local spellMacro = "/cast [@" .. unitName .. ",help,nodead] " .. spell
-                button:SetAttribute("macrotext2", spellMacro)
-                self:Debug("Single Unit Macro Executed: "..spellMacro)
-            end
-        end
+    if not classid then
+        return
     end
+
+    local unitid, spell = self:GetUnitAndSpellSmart(classid, mousebutton)
+    
+    local unitName = GetUnitName(unitid, true)
+    if not unitName then
+        return
+    end
+    
+    local spellMacro = "/cast [@" .. unitName .. ",help,nodead] " .. spell
+
+    if mousebutton == "LeftButton" then
+        button:SetAttribute("macrotext1", spellMacro)
+    end
+    if mousebutton == "RightButton" then
+        button:SetAttribute("macrotext2", spellMacro)
+    end
+
+    self:Debug("Single Unit Macro Executed: "..gspellMacro)
+
 end
 
 function PallyPower:ButtonPostClick(button, mousebutton)
@@ -3431,7 +3235,6 @@ function PallyPower:AutoBuff(button, mousebutton)
                     local spellID, gspellID = self:GetSpellID(i, unit.name)
                     local spell = self.Spells[spellID]
                     local gspell = self.GSpells[gspellID]
-                    local isPet = unit.unitid:find("pet")
                     if (IsSpellInRange(gspell, unit.unitid) == 1) and not UnitIsDeadOrGhost(unit.unitid) then
                         local penalty = 0
                         local buffExpire, buffDuration, buffName = self:IsBuffActive(spell, gspell, unit.unitid)
@@ -3471,6 +3274,7 @@ function PallyPower:AutoBuff(button, mousebutton)
                                 end
                             end
                             -- We don't buff pets with Greater Blessings
+                            local isPet = unit.unitid:find("pet")
                             if isPet then
                                 buffExpire = 9999
                                 penalty = 9999

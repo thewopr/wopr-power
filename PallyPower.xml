@@ -446,7 +446,6 @@
                     <OnLoad>
                         self:RegisterForDrag("LeftButton");
                         self:RegisterForClicks("LeftButtonUp", "RightButtonUp");
-                        self:RegisterEvent("UNIT_SPELLCAST_FAILED");
                     </OnLoad>
                     <OnClick>
                         PallyPower:ClickHandle(self, button, down);
@@ -468,9 +467,6 @@
                     <OnLeave>
                         GameTooltip:Hide(self, motion);
                     </OnLeave>
-                    <OnEvent>
-                        PallyPower:onFailedEvent(event, ...);
-                    </OnEvent>
                 </Scripts>
                 <Size>
                     <AbsDimension x = "16" y = "16"/>

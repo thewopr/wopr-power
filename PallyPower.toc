@@ -1,7 +1,7 @@
 ## Interface: 11305
 ## Author: Aznamir,Dyaxler
 ## Title: PallyPower Classic
-## Version: @project-version@
+## Version: 1.0
 ## Notes: Raid/Party Paladin buffs.
 ## DefaultState: enabled
 ## Dependencies:
@@ -10,9 +10,7 @@
 ## X-Embeds: Ace3, LibClassicDurations, LibUIDropDownMenu
 ## SavedVariables: PallyPowerDB, PallyPower_Assignments, PallyPower_NormalAssignments, PallyPower_AuraAssignments, PallyPower_SavedPresets, PallyPower_ChanNames, LCD_Data, LCD_GUIDAccess
 
-#@no-lib-strip@
 embeds.xml
-#@end-no-lib-strip@
 
 locale\enUS.lua
 locale\ruRU.lua

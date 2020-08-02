@@ -246,6 +246,17 @@ PallyPower.GSpells = {
 	[6] = GetSpellInfo(25899) --BS["Greater Blessing of Sanctuary"],
 }
 
+PallyPower.GSpellsSet = {
+    [25894]=true, --BS["Greater Blessing of Wisdom"], R1
+    [25918]=true, --BS["Greater Blessing of Wisdom"], R2
+    [25782]=true, --BS["Greater Blessing of Might"], R1
+    [25916]=true, --BS["Greater Blessing of Might"], R2
+    [25898]=true, --BS["Greater Blessing of Kings"],
+    [25895]=true, --BS["Greater Blessing of Salvation"],
+    [25890]=true, --BS["Greater Blessing of Light"],
+    [25899]=true, --BS["Greater Blessing of Sanctuary"],
+}
+
 -- spell ranks
 PallyPower.NormalBuffs = {
 	[1] = {{50, 25290}, {44, 19854}, {34, 19853}, {24, 19852}, {14, 19850}, {4, 19742}},
